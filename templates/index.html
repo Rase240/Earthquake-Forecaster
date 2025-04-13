@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SeismicWatch | Earthquake Prediction Dashboard</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="dashboard">
+        <!-- Header Section -->
+        <header class="dashboard-header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-seedling"></i>
+                    <h1>SeismicWatch</h1>
+                </div>
+                <div class="header-stats">
+                    <div class="stat-card">
+                        <span class="stat-value" id="quake-count">0</span>
+                        <span class="stat-label">Quakes</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-value" id="max-mag">0.0</span>
+                        <span class="stat-label">Max Mag</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-value" id="high-risk-count">0</span>
+                        <span class="stat-label">High Risk</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="dashboard-main">
+            <!-- Map Section -->
+            <section class="map-section">
+                <div class="map-controls">
+                    <div class="control-group">
+                        <button id="refresh-btn" class="control-btn">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                        <span id="last-updated" class="last-updated">Loading data...</span>
+                    </div>
+                    <div id="prediction-result" class="prediction-result"></div>
+                </div>
+                
+                <div class="map-container">
+                    <div id="map"></div>
+                    <div id="loading-overlay" class="loading-overlay">
+                        <div class="loading-spinner"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sidebar Section -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h3><i class="fas fa-list"></i> Recent Earthquakes</h3>
+                    <div class="filter-controls">
+                        <select id="time-filter" class="filter-select">
+                            <option value="1">24 Hours</option>
+                            <option value="7" selected>7 Days</option>
+                            <option value="30">30 Days</option>
+                        </select>
+                        <select id="magnitude-filter" class="filter-select">
+                            <option value="2.5">All (2.5+)</option>
+                            <option value="4.0">Moderate (4.0+)</option>
+                            <option value="6.0">Strong (6.0+)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="quake-list" id="quake-list"></div>
+            </aside>
+        </main>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
