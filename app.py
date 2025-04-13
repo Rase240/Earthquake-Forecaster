@@ -1,3 +1,4 @@
+# app.py
 from flask import Flask, render_template, jsonify, request
 import pandas as pd
 import requests
@@ -11,13 +12,11 @@ import time
 from functools import lru_cache
 import warnings
 
-# Suppress sklearn warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 app = Flask(__name__)
 
-# Configuration
 MODEL_FILE = 'earthquake_model.pkl'
 MIN_TRAINING_QUAKES = 50
 TRAINING_MONTHS = 6
@@ -102,7 +101,6 @@ class EarthquakeModel:
                 all_features.extend(response.json().get('features', []))
             except Exception as e:
                 print(f"× Failed to fetch data for {current_start.date()} to {current_end.date()}: {e}")
-
             current_start = current_end + timedelta(days=1)
             time.sleep(1)
 
@@ -139,7 +137,6 @@ class EarthquakeModel:
             print(f"× Prediction error: {e}")
             return None
 
-# Initialize the model
 model = EarthquakeModel()
 
 @app.route('/')
@@ -164,19 +161,24 @@ def get_earthquakes():
         response.raise_for_status()
         features = response.json().get('features', [])
 
+        print(f"✅ USGS returned {len(features)} earthquakes")
+
         if model.model:
             for feature in features:
-                coords = feature.get('geometry', {}).get('coordinates', [0, 0, 10])
-                props = feature.get('properties', {})
-                prediction = model.predict(
-                    lat=coords[1],
-                    lng=coords[0],
-                    depth=coords[2],
-                    mag=props.get('mag', 4.0)
-                )
-                if prediction:
-                    props['prediction'] = prediction['probability']
-                    props['risk'] = prediction['risk']
+                try:
+                    coords = feature.get('geometry', {}).get('coordinates', [0, 0, 10])
+                    props = feature.get('properties', {})
+                    prediction = model.predict(
+                        lat=coords[1],
+                        lng=coords[0],
+                        depth=coords[2],
+                        mag=props.get('mag', 4.0)
+                    )
+                    if prediction:
+                        props['prediction'] = prediction['probability']
+                        props['risk'] = prediction['risk']
+                except Exception as e:
+                    print(f"⚠️ Failed to predict for quake: {e}")
 
         return jsonify({
             'type': 'FeatureCollection',
@@ -187,13 +189,12 @@ def get_earthquakes():
         })
 
     except Exception as e:
+        print(f"❌ Backend error: {e}")
         return jsonify({
             'status': 'error',
             'error': str(e),
             'message': 'Failed to fetch earthquake data'
         }), 500
-
-# [Previous imports remain the same...]
 
 @app.route('/api/predict')
 def predict():
