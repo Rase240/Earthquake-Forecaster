@@ -1,4 +1,4 @@
-// script.js — final version with interaction upgrades and zero data loss
+// script.js — synced sidebar with predicted section and map markers
 
 const map = L.map('map', {
     worldCopyJump: false,
@@ -16,6 +16,7 @@ L.control.zoom({ position: 'topright' }).addTo(map);
 L.control.scale({ position: 'bottomleft', imperial: false }).addTo(map);
 
 const quakeLayer = L.layerGroup().addTo(map);
+const markerMap = new Map();
 
 const legend = L.control({ position: 'bottomright' });
 legend.onAdd = function () {
@@ -111,6 +112,8 @@ function updateStats(quakes) {
 
 function updateMapMarkers(features) {
     quakeLayer.clearLayers();
+    markerMap.clear();
+
     features.forEach(quake => {
         const coords = quake.geometry.coordinates;
         const props = quake.properties;
@@ -122,9 +125,14 @@ function updateMapMarkers(features) {
             opacity: 1,
             fillOpacity: 0.8
         }).addTo(quakeLayer);
+
         marker.feature = quake;
         marker.bindPopup(createPopupContent(props));
+
         if (props.mag >= 6.0) pulseMarker(marker);
+
+        const key = `${coords[1]}:${coords[0]}`;
+        markerMap.set(key, marker);
     });
 }
 
@@ -145,41 +153,68 @@ function pulseMarker(marker) {
 function updateQuakeList(quakes) {
     const list = document.getElementById('quake-list');
     list.innerHTML = '';
+
+    const predictedQuakes = quakes.filter(q => q.properties.prediction > 0.5);
+    const recentQuakes = quakes.filter(q => q.properties.prediction <= 0.5);
+
+    if (predictedQuakes.length > 0) {
+        const predHeader = document.createElement('div');
+        predHeader.className = 'quake-section-header';
+        predHeader.textContent = '⚠️ Predicted Earthquakes';
+        list.appendChild(predHeader);
+
+        predictedQuakes.forEach(q => list.appendChild(createQuakeItem(q, true)));
+    }
+
+    if (recentQuakes.length > 0) {
+        const recentHeader = document.createElement('div');
+        recentHeader.className = 'quake-section-header';
+        recentHeader.textContent = '🕒 Recent Earthquakes';
+        list.appendChild(recentHeader);
+
+        recentQuakes.forEach(q => list.appendChild(createQuakeItem(q, false)));
+    }
+
     if (quakes.length === 0) {
         list.innerHTML = '<div class="empty-state">No earthquakes found for current filters</div>';
-        return;
     }
-    quakes.sort((a, b) => new Date(b.properties.time) - new Date(a.properties.time));
-    quakes.forEach(quake => {
-        const props = quake.properties;
-        const coords = quake.geometry.coordinates;
-        let magClass = 'mag-low';
-        if (props.mag >= 6.0) magClass = 'mag-high';
-        else if (props.mag >= 4.0) magClass = 'mag-medium';
-        const item = document.createElement('div');
-        item.className = 'quake-item';
-        item.innerHTML = `
-            <div class="magnitude-indicator ${magClass}">${props.mag.toFixed(1)}</div>
-            <div class="quake-details">
-                <div class="quake-location">${props.place}</div>
-                <div class="quake-meta">
-                    <span>${formatTimeAgo(props.time)}</span>
-                    <span class="risk-badge ${getRiskClass(props.prediction)}">
-                        ${(props.prediction * 100).toFixed(1)}% risk
-                    </span>
-                </div>
+}
+
+function createQuakeItem(quake, isPredicted) {
+    const props = quake.properties;
+    const coords = quake.geometry.coordinates;
+    let magClass = 'mag-low';
+    if (props.mag >= 6.0) magClass = 'mag-high';
+    else if (props.mag >= 4.0) magClass = 'mag-medium';
+
+    const item = document.createElement('div');
+    item.className = `quake-item ${isPredicted ? 'predicted-item' : ''}`;
+    item.innerHTML = `
+        <div class="magnitude-indicator ${magClass}">${props.mag.toFixed(1)}</div>
+        <div class="quake-details">
+            <div class="quake-location">${props.place}</div>
+            <div class="quake-meta">
+                <span>${formatTimeAgo(props.time)}</span>
+                <span class="risk-badge ${getRiskClass(props.prediction)}">
+                    ${(props.prediction * 100).toFixed(1)}% risk
+                </span>
             </div>
-        `;
-        item.addEventListener('click', () => {
-            map.setView([coords[1], coords[0]], 8);
-            quakeLayer.eachLayer(layer => {
-                if (layer.getLatLng().lat === coords[1] && layer.getLatLng().lng === coords[0]) {
-                    layer.openPopup();
-                }
-            });
-        });
-        list.appendChild(item);
+        </div>
+    `;
+
+    item.addEventListener('click', () => {
+        const lat = coords[1];
+        const lng = coords[0];
+        const key = `${lat}:${lng}`;
+        const marker = markerMap.get(key);
+        if (marker) {
+            map.setView([lat, lng], 8);
+            marker.openPopup();
+            pulseMarker(marker);
+        }
     });
+
+    return item;
 }
 
 function updateLastUpdated() {

@@ -428,3 +428,26 @@ body {
 .leaflet-popup-content-wrapper {
     cursor: default;
 }
+
+.predicted-item {
+    border-left-color: var(--danger);
+    animation: pulse-glow 2s infinite ease-in-out;
+}
+
+@keyframes pulse-glow {
+    0% { box-shadow: 0 0 5px rgba(247, 37, 133, 0.3); }
+    50% { box-shadow: 0 0 12px rgba(247, 37, 133, 0.9); }
+    100% { box-shadow: 0 0 5px rgba(247, 37, 133, 0.3); }
+}
+
+
+.quake-section-header {
+    font-weight: bold;
+    font-size: 0.9rem;
+    margin: 0.5rem 0 0.25rem;
+    padding: 0.25rem 0.5rem;
+    background: var(--gray-light);
+    border-left: 4px solid var(--primary);
+    color: var(--dark);
+    border-radius: var(--border-radius);
+}
