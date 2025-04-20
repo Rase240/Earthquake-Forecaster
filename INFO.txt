@@ -1,0 +1,18 @@
+Code | Agency/Region
+us | USGS (United States Geological Survey)
+ci | Caltech (Southern California)
+nc | Northern California Seismic System
+ak | Alaska Earthquake Center
+hv | Hawaii Volcano Observatory
+pr | Puerto Rico Seismic Network
+uu | University of Utah
+nn | Nevada Seismological Lab
+mb | Montana Bureau
+uw | University of Washington (PNSN)
+tx | Texas Seismic Network
+ok | Oklahoma Geological Survey
+nm | New Mexico Tech
+at | Atlas of Seismicity (Rare)
+se | Southeastern US
+ew | Unknown/special equipment source
+guc | Universidad de Concepción (Chile)

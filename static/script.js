@@ -1,5 +1,3 @@
-// script.js — synced sidebar with predicted section and map markers
-
 const map = L.map('map', {
     worldCopyJump: false,
     maxBounds: [[-90, -180], [90, 180]],
@@ -16,7 +14,11 @@ L.control.zoom({ position: 'topright' }).addTo(map);
 L.control.scale({ position: 'bottomleft', imperial: false }).addTo(map);
 
 const quakeLayer = L.layerGroup().addTo(map);
+const hotspotLayer = L.layerGroup().addTo(map);
 const markerMap = new Map();
+
+let showRecentQuakes = true;
+let showHotspots = false;
 
 const legend = L.control({ position: 'bottomright' });
 legend.onAdd = function () {
@@ -35,25 +37,10 @@ legend.onAdd = function () {
 };
 legend.addTo(map);
 
-function createPopupContent(props) {
-    const depth = typeof props.depth === 'number' ? props.depth.toFixed(1) : 'N/A';
-    const magnitude = typeof props.mag === 'number' ? props.mag.toFixed(1) : 'N/A';
-    const risk = props.prediction !== undefined ? `${(props.prediction * 100).toFixed(1)}%` : 'N/A';
-
-    return `
-        <div class="quake-popup">
-            <h3>${props.place || 'Unknown Location'}</h3>
-            <div class="popup-row"><span class="popup-label">Magnitude:</span><span class="popup-value ${getMagnitudeClass(props.mag)}">${magnitude}</span></div>
-            <div class="popup-row"><span class="popup-label">Depth:</span><span class="popup-value">${depth} km</span></div>
-            <div class="popup-row"><span class="popup-label">Time:</span><span class="popup-value">${new Date(props.time).toLocaleString()}</span></div>
-            <div class="popup-row"><span class="popup-label">Risk:</span><span class="popup-value ${getRiskClass(props.prediction)}">${risk}</span></div>
-        </div>`;
-}
-
-function getMagnitudeClass(mag) {
-    if (mag >= 6) return 'high-risk';
-    if (mag >= 4) return 'medium-risk';
-    return 'low-risk';
+function getRiskColor(prediction) {
+    if (prediction > 0.7) return '#f72585';
+    if (prediction > 0.3) return '#f8961e';
+    return '#4cc9f0';
 }
 
 function getRiskClass(prediction) {
@@ -62,25 +49,23 @@ function getRiskClass(prediction) {
     return 'low-risk';
 }
 
-function getRiskColor(prediction) {
-    if (prediction > 0.7) return '#f72585';
-    if (prediction > 0.3) return '#f8961e';
-    return '#4cc9f0';
-}
-
 function getMarkerSize(magnitude) {
     return Math.min(20, Math.max(5, magnitude * 2.5));
 }
 
-function formatTimeAgo(timestamp) {
-    const seconds = Math.floor((new Date() - new Date(timestamp)) / 1000);
-    if (seconds < 60) return `${seconds} seconds ago`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
-    const days = Math.floor(hours / 24);
-    return `${days} day${days === 1 ? '' : 's'} ago`;
+function createPopupContent(props) {
+    const magnitude = props.mag?.toFixed(1) ?? 'N/A';
+    const depth = props.depth?.toFixed(1) ?? 'N/A';
+    const risk = props.prediction !== undefined ? `${(props.prediction * 100).toFixed(1)}%` : 'N/A';
+
+    return `
+        <div class="quake-popup">
+            <h3>${props.place || 'Unknown Location'}</h3>
+            <div class="popup-row"><span class="popup-label">Magnitude:</span><span class="popup-value ${getRiskClass(props.prediction)}">${magnitude}</span></div>
+            <div class="popup-row"><span class="popup-label">Depth:</span><span class="popup-value">${depth} km</span></div>
+            <div class="popup-row"><span class="popup-label">Time:</span><span class="popup-value">${new Date(props.time).toLocaleString()}</span></div>
+            <div class="popup-row"><span class="popup-label">Risk:</span><span class="popup-value ${getRiskClass(props.prediction)}">${risk}</span></div>
+        </div>`;
 }
 
 function showLoading(show) {
@@ -111,12 +96,19 @@ function updateStats(quakes) {
 }
 
 function updateMapMarkers(features) {
+    if (!showRecentQuakes) {
+        quakeLayer.clearLayers();
+        markerMap.clear();
+        return;
+    }
+
     quakeLayer.clearLayers();
     markerMap.clear();
 
     features.forEach(quake => {
         const coords = quake.geometry.coordinates;
         const props = quake.properties;
+
         const marker = L.circleMarker([coords[1], coords[0]], {
             radius: getMarkerSize(props.mag),
             fillColor: getRiskColor(props.prediction),
@@ -129,25 +121,9 @@ function updateMapMarkers(features) {
         marker.feature = quake;
         marker.bindPopup(createPopupContent(props));
 
-        if (props.mag >= 6.0) pulseMarker(marker);
-
         const key = `${coords[1]}:${coords[0]}`;
         markerMap.set(key, marker);
     });
-}
-
-function pulseMarker(marker) {
-    let currentRadius = marker.options.radius;
-    const originalRadius = currentRadius;
-    const pulse = () => {
-        currentRadius = currentRadius === originalRadius ? originalRadius * 1.3 : originalRadius;
-        marker.setRadius(currentRadius);
-    };
-    const interval = setInterval(pulse, 1000);
-    setTimeout(() => {
-        clearInterval(interval);
-        marker.setRadius(originalRadius);
-    }, 10000);
 }
 
 function updateQuakeList(quakes) {
@@ -157,44 +133,39 @@ function updateQuakeList(quakes) {
     const predictedQuakes = quakes.filter(q => q.properties.prediction > 0.5);
     const recentQuakes = quakes.filter(q => q.properties.prediction <= 0.5);
 
-    if (predictedQuakes.length > 0) {
+    if (predictedQuakes.length) {
         const predHeader = document.createElement('div');
         predHeader.className = 'quake-section-header';
         predHeader.textContent = '⚠️ Predicted Earthquakes';
         list.appendChild(predHeader);
-
         predictedQuakes.forEach(q => list.appendChild(createQuakeItem(q, true)));
     }
 
-    if (recentQuakes.length > 0) {
+    if (recentQuakes.length) {
         const recentHeader = document.createElement('div');
         recentHeader.className = 'quake-section-header';
         recentHeader.textContent = '🕒 Recent Earthquakes';
         list.appendChild(recentHeader);
-
         recentQuakes.forEach(q => list.appendChild(createQuakeItem(q, false)));
     }
 
-    if (quakes.length === 0) {
-        list.innerHTML = '<div class="empty-state">No earthquakes found for current filters</div>';
+    if (!quakes.length) {
+        list.innerHTML = '<div class="empty-state">No earthquakes found</div>';
     }
 }
 
 function createQuakeItem(quake, isPredicted) {
     const props = quake.properties;
     const coords = quake.geometry.coordinates;
-    let magClass = 'mag-low';
-    if (props.mag >= 6.0) magClass = 'mag-high';
-    else if (props.mag >= 4.0) magClass = 'mag-medium';
 
     const item = document.createElement('div');
     item.className = `quake-item ${isPredicted ? 'predicted-item' : ''}`;
     item.innerHTML = `
-        <div class="magnitude-indicator ${magClass}">${props.mag.toFixed(1)}</div>
+        <div class="magnitude-indicator">${props.mag.toFixed(1)}</div>
         <div class="quake-details">
             <div class="quake-location">${props.place}</div>
             <div class="quake-meta">
-                <span>${formatTimeAgo(props.time)}</span>
+                <span>${new Date(props.time).toLocaleTimeString()}</span>
                 <span class="risk-badge ${getRiskClass(props.prediction)}">
                     ${(props.prediction * 100).toFixed(1)}% risk
                 </span>
@@ -203,67 +174,111 @@ function createQuakeItem(quake, isPredicted) {
     `;
 
     item.addEventListener('click', () => {
-        const lat = coords[1];
-        const lng = coords[0];
-        const key = `${lat}:${lng}`;
-        const marker = markerMap.get(key);
-        if (marker) {
-            map.setView([lat, lng], 8);
-            marker.openPopup();
-            pulseMarker(marker);
-        }
+        const lat = coords[1], lng = coords[0];
+        map.setView([lat, lng], 8);
+        markerMap.get(`${lat}:${lng}`)?.openPopup();
     });
 
     return item;
-}
-
-function updateLastUpdated() {
-    document.getElementById('last-updated').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
 }
 
 function loadEarthquakes() {
     showLoading(true);
     const days = document.getElementById('time-filter').value;
     const minMag = document.getElementById('magnitude-filter').value;
+
     fetch(`/api/earthquakes?days=${days}&min_mag=${minMag}`)
-        .then(response => response.json())
+        .then(res => res.json())
         .then(data => {
-            updateLastUpdated();
             updateMapMarkers(data.features);
             updateQuakeList(data.features);
             updateStats(data.features);
+            loadHotspots();
         })
-        .catch(error => {
-            console.error('Error:', error);
-            showError(error.message);
+        .catch(err => {
+            console.error(err);
+            showError('Failed to load earthquakes');
         })
         .finally(() => showLoading(false));
+}
+
+function loadHotspots() {
+    if (!showHotspots) return;
+    fetch('/api/hotspots')
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') updateHotspots(data.hotspots);
+        })
+        .catch(err => {
+            console.error(err);
+            showError('Failed to load hotspots');
+        });
+}
+
+function updateHotspots(hotspots) {
+    hotspotLayer.clearLayers();
+
+    if (hotspots.length > 500) {
+        hotspots = hotspots.filter(spot => spot.probability > 0.7);
+    }
+
+    hotspots.forEach(spot => {
+        const radius = Math.min(15, Math.max(5, spot.probability * 20));
+        const color = getRiskColor(spot.probability);
+
+        L.circleMarker([spot.latitude, spot.longitude], {
+            radius,
+            fillColor: color,
+            color: '#000',
+            weight: 1,
+            opacity: 0.7,
+            fillOpacity: 0.5,
+            className: 'hotspot-marker'
+        }).addTo(hotspotLayer);
+    });
+}
+
+function addToggleControls() {
+    const toggle = L.control({ position: 'topright' });
+    toggle.onAdd = function () {
+        const div = L.DomUtil.create('div', 'toggle-controls');
+        div.innerHTML = `
+            <div class="toggle-control"><label><input type="checkbox" id="toggle-quakes" checked> Show Earthquakes</label></div>
+            <div class="toggle-control"><label><input type="checkbox" id="toggle-hotspots"> Show Hotspots</label></div>
+        `;
+        return div;
+    };
+    toggle.addTo(map);
+
+    document.getElementById('toggle-quakes').addEventListener('change', (e) => {
+        showRecentQuakes = e.target.checked;
+        loadEarthquakes();
+    });
+
+    document.getElementById('toggle-hotspots').addEventListener('change', (e) => {
+        showHotspots = e.target.checked;
+        if (showHotspots) loadHotspots();
+        else hotspotLayer.clearLayers();
+    });
 }
 
 document.getElementById('refresh-btn').addEventListener('click', loadEarthquakes);
 document.getElementById('time-filter').addEventListener('change', loadEarthquakes);
 document.getElementById('magnitude-filter').addEventListener('change', loadEarthquakes);
 
+addToggleControls();
 loadEarthquakes();
 
-let clickedMarker;
+// Debounced map click
+let lastClickTime = 0;
 map.on('click', function (e) {
+    const now = Date.now();
+    if (now - lastClickTime < 1000) return;
+    lastClickTime = now;
+
     const lat = e.latlng.lat.toFixed(4);
     const lng = e.latlng.lng.toFixed(4);
 
-    if (clickedMarker) map.removeLayer(clickedMarker);
-
-    clickedMarker = L.circleMarker(e.latlng, {
-        radius: 8,
-        fillColor: '#ff4d6d',
-        color: '#000',
-        weight: 2,
-        opacity: 1,
-        fillOpacity: 0.8,
-        className: 'clicked-marker'
-    }).addTo(map);
-
-    showLoading(true);
     fetch(`/api/predict?lat=${lat}&lon=${lng}`)
         .then(res => res.json())
         .then(data => {
@@ -274,18 +289,14 @@ map.on('click', function (e) {
                     Longitude: ${data.longitude.toFixed(4)}<br>
                     Risk Level: <b>${data.risk.toUpperCase()}</b><br>
                     Probability: ${(data.probability * 100).toFixed(1)}%`;
-
                 L.popup().setLatLng(e.latlng).setContent(content).openOn(map);
                 document.getElementById('prediction-result').innerHTML = content;
-            } else {
-                showError('Prediction failed: ' + data.message);
             }
         })
         .catch(err => {
-            console.error('Prediction error:', err);
-            showError('Prediction request failed.');
-        })
-        .finally(() => showLoading(false));
+            console.error(err);
+            showError('Prediction failed');
+        });
 });
 
 map.on('popupclose', () => {

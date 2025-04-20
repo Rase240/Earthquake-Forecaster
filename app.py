@@ -1,4 +1,3 @@
-# app.py
 from flask import Flask, render_template, jsonify, request
 import pandas as pd
 import requests
@@ -137,6 +136,28 @@ class EarthquakeModel:
             print(f"× Prediction error: {e}")
             return None
 
+    def predict_hotspots(self, grid_size=5):
+        if not self.model:
+            return None
+        try:
+            lats = range(-90, 90, grid_size)
+            lngs = range(-180, 180, grid_size)
+            hotspots = []
+            for lat in lats:
+                for lng in lngs:
+                    prediction = self.predict(lat, lng)
+                    if prediction and prediction['probability'] > 0.5:
+                        hotspots.append({
+                            'latitude': lat,
+                            'longitude': lng,
+                            'probability': prediction['probability'],
+                            'risk': prediction['risk']
+                        })
+            return hotspots
+        except Exception as e:
+            print(f"× Hotspot prediction error: {e}")
+            return None
+
 model = EarthquakeModel()
 
 @app.route('/')
@@ -229,6 +250,25 @@ def predict():
             'error': str(e),
             'message': 'Prediction failed'
         }), 400
+
+@app.route('/api/hotspots')
+def get_hotspots():
+    try:
+        hotspots = model.predict_hotspots()
+        if not hotspots:
+            return jsonify({'status': 'error', 'message': 'Hotspot prediction unavailable'}), 503
+        return jsonify({
+            'status': 'success',
+            'hotspots': hotspots,
+            'count': len(hotspots),
+            'generated': datetime.now(timezone.utc).isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'message': 'Failed to generate hotspots'
+        }), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
