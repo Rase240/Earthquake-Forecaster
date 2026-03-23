@@ -392,7 +392,7 @@ class EarthquakeModel:
 
         return df
 
-    def predict(self, lat, lng, depth=10.0):
+    def predict(self, lat, lng, depth=10.0, live_density=None):
         if not self.model or not self.scaler:
             return {"error": "Model not loaded"}
 
@@ -400,8 +400,12 @@ class EarthquakeModel:
         lng = max(-180, min(180, lng))
         depth = max(0, min(700, depth))
         
-        # Dynamically fetch current real-world context for accurate prediction
-        local_density = self.get_live_local_density(lat, lng)
+        # If live_density isn't provided, fetch it (for single map clicks)
+        if live_density is None:
+            local_density = self.get_live_local_density(lat, lng)
+        else:
+            local_density = live_density
+            
         plate_distance = self.compute_plate_distance_single(lat, lng)
 
         x = [[lat, lng, depth, local_density, plate_distance]]
@@ -426,6 +430,9 @@ class EarthquakeModel:
 # Initialize globally
 model = EarthquakeModel()
 
+# =======================
+# FLASK ROUTES
+# =======================
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -434,12 +441,11 @@ def index():
 def predict_api():
     try:
         lat = float(request.args.get('lat'))
-        # Accept either 'lon' or 'lng' from the frontend
+        # Accept 'lon' from frontend to fix the 400 Bad Request error
         lng_str = request.args.get('lon') or request.args.get('lng')
         lng = float(lng_str)
         depth = float(request.args.get('depth', 10))
     except Exception as e:
-        # Added the actual error message here to help with future debugging
         return jsonify({"error": f"Invalid input: {e}"}), 400
 
     return jsonify(model.predict(lat, lng, depth))
@@ -447,12 +453,67 @@ def predict_api():
 @app.route('/api/earthquakes')
 def earthquakes():
     try:
-        url = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&limit=200"
+        # 1. Grab filters from your frontend UI
+        days = int(request.args.get('days', 7))
+        min_mag = float(request.args.get('min_mag', 2.5))
+        
+        end_date = datetime.now(timezone.utc)
+        start_date = end_date - timedelta(days=days)
+        
+        # 2. Fetch data from USGS based on frontend filters
+        url = (
+            f"https://earthquake.usgs.gov/fdsnws/event/1/query?"
+            f"format=geojson&starttime={start_date.strftime('%Y-%m-%d')}"
+            f"&endtime={end_date.strftime('%Y-%m-%d')}"
+            f"&minmagnitude={min_mag}&limit=300"
+        )
         res = requests.get(url, timeout=10)
-        return jsonify(res.json())
-    except:
-        return jsonify({"error": "failed"}), 500
+        data = res.json()
+        
+        # 3. FAST BATCH PREDICTION (Avoids spamming USGS API)
+        features = data.get('features', [])
+        if features:
+            # Calculate local density for the whole batch instantly
+            df = pd.DataFrame([f['geometry']['coordinates'] for f in features], columns=['longitude', 'latitude', 'depth'])
+            df = model.compute_density(df, radius=1.0)
+            densities = df['local_density'].tolist()
 
+            # Grade each earthquake with the AI model so the frontend can color-code them
+            for i, feature in enumerate(features):
+                coords = feature['geometry']['coordinates']
+                props = feature['properties']
+                
+                pred = model.predict(lat=coords[1], lng=coords[0], depth=coords[2], live_density=densities[i])
+                props['prediction'] = pred.get('probability', 0)
+            
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/hotspots')
+def hotspots():
+    # Simulating active tectonic zones to feed the frontend toggle feature
+    zones = [
+        (36.1, -120.2), # San Andreas
+        (35.6, 140.1),  # Japan
+        (-33.4, -70.6), # Chile
+        (39.2, 40.0),   # Anatolian
+        (-3.0, 100.0),  # Sumatra
+        (41.9, 12.5),   # Italy
+        (-41.2, 174.7)  # New Zealand
+    ]
+    
+    results = []
+    for lat, lng in zones:
+        # Fast prediction with an assumed baseline density
+        pred = model.predict(lat, lng, 10.0, live_density=5) 
+        results.append({
+            "latitude": lat,
+            "longitude": lng,
+            "probability": pred.get("probability", 0)
+        })
+        
+    return jsonify({"status": "success", "hotspots": results})
 
 @app.route('/api/model-info')
 def model_info():
